@@ -1,0 +1,221 @@
+CustomerDataNotFoundException.java
+==================================
+ 
+public class CustomerDataNotFoundException extends RuntimeException{
+ 
+ private static final long serialVersionUID = 1L;
+ 
+ public CustomerDataNotFoundException(String exceptionMsg)
+ {
+ super(exceptionMsg);
+ }
+ 
+}
+RESTService.java
+================
+import com.ExceptionHandlingRelated.CustomerDataNotFoundException;
+ 
+public class RESTService {
+ 
+ CallDB cdb = new CallDB();
+ 
+ public String checkCustomerStatus(String custId){
+ 
+ MyData da = cdb.getStatus(custId); 
+ 
+ if(da.getStatus() == null)
+ {
+ throw new CustomerDataNotFoundException("Customer status not found with id "+custId);
+ }
+ 
+ return da.getStatus().trim();
+ 
+ }
+}
+I am checking the status with if condition. If status is NULL, 
+throwing out the custom exception by passing some meaningful message. Lets run the application and see..
+
+
+
+What happens behind the scenes
+Actually we are throwing CustomerDataNotFoundException if the status is NULL, if you observe, we are not handling that exception in RESTService, instead simply throwing with our message. So the exception keeps bubbling up and will come to RESTResource (here also we are not handling ) and so from there to JAX-RS and finally will reach Tomcat server container, and server will show its default error page, that’s what we are seeing in the above image.
+So in order to stop exception bubbling up to the tomcat server container, we need to create an exception mapper.
+CustomerDataNotFoundExceptionMapper.java
+
+package com.ExceptionHandlingRelated;
+
+import javax.ws.rs.core.Response;
+import javax.ws.rs.core.Response.Status;
+import javax.ws.rs.ext.ExceptionMapper;
+import javax.ws.rs.ext.Provider;
+
+@Provider
+public class CustomerDataNotFoundExceptionMapper implements ExceptionMapper<CustomerDataNotFoundException>{
+	
+	public Response toResponse(CustomerDataNotFoundException ex)
+	{
+		return Response.status(Status.NOT_FOUND)
+				.entity(new ErrorProps("404", ex.getMessage()))
+				.build();
+	}
+}
+
+package com.ExceptionHandlingRelated;
+ 
+import javax.ws.rs.core.Response;
+import javax.ws.rs.core.Response.Status;
+import javax.ws.rs.ext.ExceptionMapper;
+import javax.ws.rs.ext.Provider;
+ 
+@Provider
+public class CustomerDataNotFoundExceptionMapper implements ExceptionMapper<CustomerDataNotFoundException>{
+ 
+ public Response toResponse(CustomerDataNotFoundException ex)
+ {
+ return Response.status(Status.NOT_FOUND)
+ .entity(new ErrorProps("404", ex.getMessage()))
+ .build();
+ }
+}
+ErrorProps.java
+
+package com.ExceptionHandlingRelated;
+
+import javax.xml.bind.annotation.XmlRootElement;
+
+@XmlRootElement
+public class ErrorProps {
+	
+	private String status;
+	private String errorMessage;
+	
+	public ErrorProps(){}
+	
+	public ErrorProps(String statusFromOutside, String errorMessageFromOutside)
+	{
+		this.status = statusFromOutside;
+		this.errorMessage = errorMessageFromOutside;
+	}
+	
+	
+	public String getErrorMessage() {
+		return errorMessage;
+	}
+	public void setErrorMessage(String errorMessage) {
+		this.errorMessage = errorMessage;
+	}
+	public String getStatus() {
+		return status;
+	}
+	public void setStatus(String status) {
+		this.status = status;
+	}	
+
+}
+
+package com.ExceptionHandlingRelated;
+ 
+import javax.xml.bind.annotation.XmlRootElement;
+ 
+@XmlRootElement
+public class ErrorProps {
+ 
+ private String status;
+ private String errorMessage;
+ 
+ public ErrorProps(){}
+ 
+ public ErrorProps(String statusFromOutside, String errorMessageFromOutside)
+ {
+ this.status = statusFromOutside;
+ this.errorMessage = errorMessageFromOutside;
+ }
+ 
+ 
+ public String getErrorMessage() {
+ return errorMessage;
+ }
+ public void setErrorMessage(String errorMessage) {
+ this.errorMessage = errorMessage;
+ }
+ public String getStatus() {
+ return status;
+ }
+ public void setStatus(String status) {
+ this.status = status;
+ } 
+ 
+}
+Explanation
+Created an exception mapper CustomerDataNotFoundExceptionMapper for CustomerDataNotFoundException 
+All exception mappers should implement ExceptionMapper interface of type generic, for now I am going to use this exception mapper only for our exception, so I have implemented ExceptionMapper of type CustomerDataNotFoundException [check at line number 9]
+We need to override the toResponse method of ExceptionMapper interface, which takes exception as an argument, in this case CustomerDataNotFoundException
+I want to display my exception details as an XML, so created a simple java model ErrorProps.java and annotated with @XmlRootElement
+Now come back to mapper class toResponse method, there I am returning Response object
+Response.status( – ) :- setting the current status
+.entity( – ) :- passing ErrorProps class object by setting required values, here I am setting status as 404, and our custom exception message
+Finally annotate our mapper class with @Provider annotation, so that JAX-RS will register this mapper to intercept the response when particular exception was thrown
+Go ahead and run the application and see…
+
+
+But this is only for NullPointerException, but how about the other exceptions ? for that we need to modify the mapper. Let me do it by creating new mapper class.
+GenericExceptionMapper.java
+
+package com.ExceptionHandlingRelated;
+
+import javax.ws.rs.core.Response;
+import javax.ws.rs.core.Response.Status;
+import javax.ws.rs.ext.ExceptionMapper;
+import javax.ws.rs.ext.Provider;
+
+@Provider
+public class GenericExceptionMapper implements ExceptionMapper<Throwable>{
+	
+	public Response toResponse(Throwable ex)
+	{
+		if(ex instanceof CustomerDataNotFoundException)
+		{
+		
+			return Response.status(Status.NOT_FOUND)
+				       .entity(new ErrorProps("404", ex.getMessage()))
+				       .build();
+		}
+		else
+		{
+			return Response.status(Status.INTERNAL_SERVER_ERROR)
+					.entity(new ErrorProps("Some error code, 500 or somthing", ex.getMessage()))
+					.build();
+		}
+	}
+
+}
+
+package com.ExceptionHandlingRelated;
+ 
+import javax.ws.rs.core.Response;
+import javax.ws.rs.core.Response.Status;
+import javax.ws.rs.ext.ExceptionMapper;
+import javax.ws.rs.ext.Provider;
+ 
+@Provider
+public class GenericExceptionMapper implements ExceptionMapper<Throwable>{
+ 
+ public Response toResponse(Throwable ex)
+ {
+ if(ex instanceof CustomerDataNotFoundException)
+ {
+ 
+ return Response.status(Status.NOT_FOUND)
+        .entity(new ErrorProps("404", ex.getMessage()))
+        .build();
+ }
+ else
+ {
+ return Response.status(Status.INTERNAL_SERVER_ERROR)
+ .entity(new ErrorProps("Some error code, 500 or somthing", ex.getMessage()))
+ .build();
+ }
+ }
+ 
+}
+
